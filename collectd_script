@@ -1,0 +1,81 @@
+#!/bin/bash
+config_file="collectd.conf"
+
+# Edit values in config file
+ # sed -i '' -e "s/$TARGET_VARIABLE/$REPLACEMENT_VARIABLE/g" $config_file
+ # must have '' unless you want to create a backup file
+
+version_regex="^\d+.\d+.\d+"
+## Check to see if collectd and libcurl are installed
+if [[ -f "/usr/local/etc/collectd.conf" && -d "/usr/local/Cellar/curl/" ]]; then
+  echo "Files both Exist!"
+elif [ ! -f "/usr/local/etc/collectd.conf" ]; then
+  echo "Collectd.conf does not exist, installing now..."
+  sudo yum install collectd
+elif [ ! -d "/usr/local/Cellar/curl/" ]; then
+  echo "Libcurl does not exist, installing now..."
+  sudo yum install libcurl
+else
+  echo "Collectd.conf and Libcurl do not exist, installing now..."
+  sudo yum install collectd
+  sleep 10
+  sudo yum install libcurl
+fi
+sleep 5
+echo "Retrieving Splunk UNIX files..."
+## wget the plugin.tgz, extract to plugin dir
+wget --no-check-certificate https://splunk.exelonds.com/en-US/static/app/splunk_app_infrastructure/unix_agent/unix-agent.tgz
+sleep 2
+tar xvzf unix-agent.tgz
+sleep 5
+cp unix-agent/write_splunk.so /usr/lib64/collectd
+
+sleep 5
+echo "Accessing collectd.conf file..."
+## Edit collectd.conf with hostname, environment, application, pulled from CSV file
+# Variables that help make the loop and parsing the csv file smoother
+INPUT=Book1.csv
+OLDIFS=$IFS
+IFS=","
+
+# assign default values from base collect.conf so the loop can find them
+HOST_TARGET="hostname"
+OS_TARGET="opsys"
+ENT_TARGET="ent_type"
+ENV_TARGET="evn"
+APP_TARGET="apps"
+
+echo "Reading CSV file..."
+sleep 2
+
+[ ! -f $INPUT ] &while read a_name a_type a_status os env plat isSccm d_name ppm_app app_name bus_val portfolio bus_unit;
+do
+
+
+  # change Hostname
+  sed -i '' -e "s/$HOST_TARGET/$a_name/g" $config_file
+  echo "Target: $HOST_TARGET"
+  echo "App_Name: $a_name"
+  # # change Application Name
+  sed -i '' -e "s/$APP_TARGET/$app_name/g" $config_file
+  # # change Operating System
+  sed -i '' -e "s/$OS_TARGET/$os/g" $config_file
+  # # change Environment
+  sed -i '' -e "s/$ENV_TARGET/$env/g" $config_file
+  # # change Platform
+  sed -i '' -e "s/$ENT_TARGET/$plat/g" $config_file
+
+  HOST_TARGET="$a_name"
+  APP_TARGET="$app_name"
+  OS_TARGET="$os"
+  ENV_TARGET="$env"
+  ENT_TYPE="$plat"
+  sleep .5
+
+
+  ## restart collectd service
+  echo "Restarting service..."
+  sudo service collectd restart
+done < $INPUT
+IFS=$OLDIFS
+echo "Values are changed"
